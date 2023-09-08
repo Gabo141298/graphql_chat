@@ -1,5 +1,11 @@
 import { GraphQLError } from 'graphql';
 import { createMessage, getMessages } from './db/messages.js';
+import { PubSub } from 'graphql-subscriptions';
+
+const MESSAGE_ADDED = 'MESSAGE_ADDED';
+
+// The graphql-subscriptions version of the PubSub isn't good for production
+const pubSub = new PubSub();
 
 export const resolvers = {
   Query: {
@@ -10,11 +16,22 @@ export const resolvers = {
   },
 
   Mutation: {
-    addMessage: (_root, { text }, { user }) => {
+    addMessage: async (_root, { text }, { user }) => {
       if (!user) throw unauthorizedError();
-      return createMessage(user, text);
+      const message = await createMessage(user, text);
+      pubSub.publish(MESSAGE_ADDED, { messageAdded: message });
+      return message;
     },
   },
+
+  Subscription: {
+    messageAdded: {
+      subscribe: (_root, _args, { user }) => {
+        if (!user) throw unauthorizedError();
+        return pubSub.asyncIterator(MESSAGE_ADDED);
+      },
+    }
+  }
 };
 
 function unauthorizedError() {
